@@ -1,0 +1,123 @@
+<?php
+
+namespace App\Http\Controllers\Frontend;
+
+use App\Http\Controllers\Controller;
+use App\Http\Requests\Frontend\FilterRequest;
+use App\Services\Frontend\BannerService;
+use App\Services\Frontend\CategoryService;
+
+class CategoryController extends Controller
+{
+  public function __construct(protected CategoryService $categoryService, protected BannerService $bannerService) {}
+
+  public function index()
+  {
+    return view(
+      'frontend.pages.categories.index',
+      [
+        'title' => 'All Categories',
+        'meta_title' => 'All Categories | Fortier Healthcare PVT. LTD.',
+        'meta_description' => 'Explore all healthcare, medical supplies, and wellness product categories at Fortier Healthcare PVT. LTD. Find high-quality products for all your healthcare needs.',
+        'meta_keywords' => 'categories, healthcare categories, medical products, wellness products, healthcare supplies, Fortier Healthcare',
+
+        'productCategories' => $this->categoryService->getCategoriesWithProducts(4, 'latest'),
+        'popularCategories' => $this->categoryService->getCategoriesWithProducts(8),
+        'categoryBanner' => $this->bannerService->getBanner('category_page_banner', true),
+        'categorySaleBlock' => $this->bannerService->getBanner('category_sale_block', true),
+        'categoryHotDealsBlock' => $this->bannerService->getBanner('hot_deals_category_banner', false, 'custom_order'),
+        'categoryHeadlineBanner' => $this->bannerService->getBanner('category_page_headline_banner', true),
+      ]
+    );
+  }
+
+  // public function bySlug(FilterRequest $request, string $slug)
+  // {
+
+  //   $category = $this->categoryService->getCategory($slug);
+  //   //pd($category->parent->parent->id);
+  //   $productListingBanner = $this->bannerService->getBanner('shop_details_page_banner', false);
+  //   pd($productListingBanner);
+
+  //   if (!$category) {
+  //     return response()->view('frontend.errors.404', [], 404);
+  //   }
+
+  //   $childCategories = $this->categoryService->getChildCategories($category);
+  //   if ($childCategories->isNotEmpty()) {
+  //     return view('frontend.pages.categories.sub-categories', [
+  //       'childCategories' => $childCategories,
+  //       'title' => $category->title ?? '',
+  //       'categoryHotDealsBlock' => $this->bannerService->getBanner('hot_deals_category_banner', false, 'custom_order'),
+  //       'categoryBanner' => $this->bannerService->getBanner('category_page_banner', true),
+  //       'categoryHeadlineBanner' => $this->bannerService->getBanner('category_page_headline_banner', true),
+  //     ]);
+  //   }
+
+  //   $products = $this->categoryService->getDisplayProducts($category);
+
+  //   if ($products->isEmpty()) {
+  //     return response()->view('frontend.errors.404', [], 404);
+  //   }
+  //   return view('frontend.pages.categories.show', array_merge(
+  //     $this->categoryService->prepareViewData($category, $products, $request, $slug),
+  //     // ['productListingBanner' => $this->bannerService->getBanner('shop_page_banner', true)]
+  //     ['productListingBanner' => $this->bannerService->getBanner('shop_details_page_banner', false)]
+  //   ));
+  // }
+
+  public function bySlug(FilterRequest $request, string $slug, string $child_slug = null)
+  {
+    $actualSlug = $child_slug ? $child_slug : $slug;
+    $parentSlug = $child_slug ? $slug : null;
+    
+    $category = $this->categoryService->getCategory($actualSlug, $parentSlug);
+
+    if (! $category) {
+      return response()->view('frontend.errors.404', [], 404);
+    }
+
+    // Determine which category ID to use for matching banners
+    $targetCategoryId = $category->parent->parent->id ?? 0;
+
+    // Fetch all banners for 'shop_details_page_banner'
+    $banners = $this->bannerService->getBanner('shop_details_page_banner', false);
+
+    // Find banner that matches the target category ID in "single_option"
+    $productListingBanner = collect($banners)->first(function ($banner) use ($targetCategoryId) {
+      $settings = json_decode($banner['settings'], true);
+
+      return isset($settings['single_option']) && $settings['single_option'] == $targetCategoryId;
+    });
+
+    // Optional fallback: use the first available banner if no match found
+    // if (! $productListingBanner) {
+    //     $productListingBanner = collect($banners)->first();
+    // }
+
+    $childCategories = $this->categoryService->getChildCategories($category);
+
+    $products = $this->categoryService->getDisplayProducts($category);
+
+    $categoryTitle = $category->title ?? 'Category';
+    $catMetaTitle = !empty($category->meta_title) ? $category->meta_title : ($categoryTitle . ' | Fortier Healthcare PVT. LTD.');
+    $catMetaDesc = !empty($category->meta_desc) 
+      ? $category->meta_desc 
+      : ('Shop ' . $categoryTitle . ' products online at best prices from Fortier Healthcare PVT. LTD. Explore high-quality healthcare and wellness items.');
+    $catMetaKeywords = !empty($category->meta_keywords) ? $category->meta_keywords : ($categoryTitle . ', healthcare products, Fortier Healthcare');
+
+    return view('frontend.pages.categories.show', array_merge(
+      $this->categoryService->prepareViewData($category, $products, $request, $actualSlug),
+      [
+        'productListingBanner' => $productListingBanner,
+        'category_slug' => $category->slug ?? '',
+        'category' => $category,
+        'childCategories' => $childCategories,
+        'title' => $categoryTitle,
+        'meta_title' => $catMetaTitle,
+        'meta_description' => $catMetaDesc,
+        'meta_keywords' => $catMetaKeywords,
+      ]
+    ));
+  }
+}
